@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -227,16 +228,19 @@ func (o TopPodOptions) RunTopPod() error {
 		return err
 	}
 
+	index := 1
 	for node, nodeMetric := range nodeMetrics {
-		fmt.Println("Node")
-		fmt.Println("====")
+		fmt.Printf("%d. Node (%s)\n", index, node)
+		fmt.Println("==============================================")
 		fmt.Println()
-		o.Printer.PrintNodeMetrics([]metricsapi.NodeMetrics{nodeMetric}, availableResources, o.NoHeaders, o.SortBy)
+		o.Printer.PrintNodeMetrics([]metricsapi.NodeMetrics{nodeMetric}, map[string]v1.ResourceList{node: availableResources[node]}, o.NoHeaders, o.SortBy)
 		fmt.Println()
 		fmt.Println("Pods")
 		fmt.Println("====")
 		fmt.Println()
 		o.Printer.PrintPodMetrics(podMetrics[node], o.PrintContainers, o.AllNamespaces, o.NoHeaders, o.SortBy, o.Sum)
+
+		index++
 	}
 
 	return nil
