@@ -17,12 +17,9 @@ limitations under the License.
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"time"
 
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -34,12 +31,11 @@ import (
 	"k8s.io/kubectl/pkg/util/i18n"
 	"k8s.io/kubectl/pkg/util/templates"
 	metricsapi "k8s.io/metrics/pkg/apis/metrics"
-	metricsv1beta1api "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 
+	"github.com/rajatjindal/kubectl-group-top/pkg/k8s"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -64,8 +60,6 @@ type TopPodOptions struct {
 	Sum                bool
 	ShowCapacity       bool
 
-	PodClient       corev1client.PodsGetter
-	NodeClient      corev1client.CoreV1Interface
 	Printer         *metricsutil.TopCmdPrinter
 	DiscoveryClient discovery.DiscoveryInterface
 	MetricsClient   metricsclientset.Interface
@@ -73,11 +67,10 @@ type TopPodOptions struct {
 	factory cmdutil.Factory
 	genericclioptions.IOStreams
 	configFlags *genericclioptions.ConfigFlags
+	k8sclient   corev1client.CoreV1Interface
 }
 
 var o *TopPodOptions
-
-const metricsCreationDelay = 2 * time.Minute
 
 var (
 	topPodLong = templates.LongDesc(i18n.T(`
@@ -107,6 +100,9 @@ func NewCmdTopPod(streams genericclioptions.IOStreams) *cobra.Command {
 		IOStreams:          streams,
 		UseProtocolBuffers: false,
 		configFlags:        genericclioptions.NewConfigFlags(true),
+		Sum:                true,
+		AllNamespaces:      true,
+		SortBy:             "memory",
 	}
 
 	cmd := &cobra.Command{
@@ -171,8 +167,7 @@ func (o *TopPodOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args []s
 		return err
 	}
 
-	o.PodClient = clientset.CoreV1()
-	o.NodeClient = clientset.CoreV1()
+	o.k8sclient = clientset.CoreV1()
 	o.Printer = metricsutil.NewTopCmdPrinter(o.Out)
 	return nil
 }
@@ -217,17 +212,17 @@ func (o TopPodOptions) RunTopPod() error {
 		return errors.New("metrics API not available")
 	}
 
-	podMetrics, err := getPodMetricsFromMetricsAPI(o, o.Namespace, o.ResourceName, o.AllNamespaces, labelSelector, fieldSelector)
+	podMetrics, err := k8s.GetPodMetricsGroupedByNode(o.MetricsClient, o.k8sclient, o.Namespace, o.ResourceName, o.AllNamespaces, labelSelector, fieldSelector)
 	if err != nil {
 		return err
 	}
 
-	nodeMetrics, err := getNodeMetricsFromMetricsAPI(o.MetricsClient, o.ResourceName, labelSelector)
+	nodeMetrics, err := k8s.GetNodeMetricsGroupedByNode(o.MetricsClient, o.ResourceName, labelSelector)
 	if err != nil {
 		return err
 	}
 
-	availableResources, err := getAvailableResources(o)
+	availableResources, err := k8s.GetAvailableResources(o.k8sclient, o.ResourceName, labelSelector, o.ShowCapacity)
 	if err != nil {
 		return err
 	}
@@ -247,106 +242,6 @@ func (o TopPodOptions) RunTopPod() error {
 	return nil
 }
 
-func getPodMetricsFromMetricsAPI(o TopPodOptions, namespace, resourceName string, allNamespaces bool, labelSelector labels.Selector, fieldSelector fields.Selector) (map[string][]metricsapi.PodMetrics, error) {
-	var err error
-	ns := metav1.NamespaceAll
-	if !allNamespaces {
-		ns = namespace
-	}
-	versionedMetrics := &metricsv1beta1api.PodMetricsList{}
-	if resourceName != "" {
-		m, err := o.MetricsClient.MetricsV1beta1().PodMetricses(ns).Get(context.TODO(), resourceName, metav1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-		versionedMetrics.Items = []metricsv1beta1api.PodMetrics{*m}
-	} else {
-		versionedMetrics, err = o.MetricsClient.MetricsV1beta1().PodMetricses(ns).List(context.TODO(), metav1.ListOptions{LabelSelector: labelSelector.String(), FieldSelector: fieldSelector.String()})
-		if err != nil {
-			return nil, err
-		}
-	}
-	metrics := &metricsapi.PodMetricsList{}
-	err = metricsv1beta1api.Convert_v1beta1_PodMetricsList_To_metrics_PodMetricsList(versionedMetrics, metrics, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(metrics.Items) == 0 {
-		err = verifyEmptyMetrics(o, labelSelector, fieldSelector)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	podNodeMap, err := getPodNodeMap(o)
-	if err != nil {
-		return nil, err
-	}
-
-	m := map[string][]metricsapi.PodMetrics{}
-	for _, metric := range metrics.Items {
-		nodeName := podNodeMap[metric.Name]
-		m[nodeName] = append(m[nodeName], metric)
-	}
-
-	return m, nil
-}
-
-func getPodNodeMap(o TopPodOptions) (map[string]string, error) {
-	pods, err := o.PodClient.Pods(v1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	m := map[string]string{}
-	for _, pod := range pods.Items {
-		m[pod.Name] = pod.Spec.NodeName
-	}
-
-	return m, nil
-}
-
-func verifyEmptyMetrics(o TopPodOptions, labelSelector labels.Selector, fieldSelector fields.Selector) error {
-	if len(o.ResourceName) > 0 {
-		pod, err := o.PodClient.Pods(o.Namespace).Get(context.TODO(), o.ResourceName, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if err := checkPodAge(pod); err != nil {
-			return err
-		}
-	} else {
-		pods, err := o.PodClient.Pods(o.Namespace).List(context.TODO(), metav1.ListOptions{
-			LabelSelector: labelSelector.String(),
-			FieldSelector: fieldSelector.String(),
-		})
-		if err != nil {
-			return err
-		}
-		if len(pods.Items) == 0 {
-			return nil
-		}
-		for _, pod := range pods.Items {
-			if err := checkPodAge(&pod); err != nil {
-				return err
-			}
-		}
-	}
-	return errors.New("metrics not available yet")
-}
-
-func checkPodAge(pod *v1.Pod) error {
-	age := time.Since(pod.CreationTimestamp.Time)
-	if age > metricsCreationDelay {
-		message := fmt.Sprintf("Metrics not available for pod %s/%s, age: %s", pod.Namespace, pod.Name, age.String())
-		return errors.New(message)
-	} else {
-		klog.V(2).Infof("Metrics not yet available for pod %s/%s, age: %s", pod.Namespace, pod.Name, age.String())
-		return nil
-	}
-}
-
 func SupportedMetricsAPIVersionAvailable(discoveredAPIGroups *metav1.APIGroupList) bool {
 	for _, discoveredAPIGroup := range discoveredAPIGroups.Groups {
 		if discoveredAPIGroup.Name != metricsapi.GroupName {
@@ -361,67 +256,4 @@ func SupportedMetricsAPIVersionAvailable(discoveredAPIGroups *metav1.APIGroupLis
 		}
 	}
 	return false
-}
-
-func getNodeMetricsFromMetricsAPI(metricsClient metricsclientset.Interface, resourceName string, selector labels.Selector) (map[string]metricsapi.NodeMetrics, error) {
-	var err error
-	versionedMetrics := &metricsv1beta1api.NodeMetricsList{}
-	mc := metricsClient.MetricsV1beta1()
-	nm := mc.NodeMetricses()
-	if resourceName != "" {
-		m, err := nm.Get(context.TODO(), resourceName, metav1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-		versionedMetrics.Items = []metricsv1beta1api.NodeMetrics{*m}
-	} else {
-		versionedMetrics, err = nm.List(context.TODO(), metav1.ListOptions{LabelSelector: selector.String()})
-		if err != nil {
-			return nil, err
-		}
-	}
-	metrics := &metricsapi.NodeMetricsList{}
-	err = metricsv1beta1api.Convert_v1beta1_NodeMetricsList_To_metrics_NodeMetricsList(versionedMetrics, metrics, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	m := map[string]metricsapi.NodeMetrics{}
-	for _, metric := range metrics.Items {
-		m[metric.Name] = metric
-	}
-
-	return m, nil
-
-}
-
-func getAvailableResources(o TopPodOptions) (map[string]v1.ResourceList, error) {
-	var nodes []v1.Node
-	if len(o.ResourceName) > 0 {
-		node, err := o.NodeClient.Nodes().Get(context.TODO(), o.ResourceName, metav1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-		nodes = append(nodes, *node)
-	} else {
-		nodeList, err := o.NodeClient.Nodes().List(context.TODO(), metav1.ListOptions{
-			LabelSelector: o.LabelSelector,
-		})
-		if err != nil {
-			return nil, err
-		}
-		nodes = append(nodes, nodeList.Items...)
-	}
-
-	availableResources := make(map[string]v1.ResourceList)
-
-	for _, n := range nodes {
-		if !o.ShowCapacity {
-			availableResources[n.Name] = n.Status.Allocatable
-		} else {
-			availableResources[n.Name] = n.Status.Capacity
-		}
-	}
-
-	return availableResources, nil
 }
