@@ -241,7 +241,7 @@ func (o TopPodOptions) RunTopPod() error {
 		fmt.Println("Pods")
 		fmt.Println("====")
 		fmt.Println()
-		o.Printer.PrintPodMetrics(podMetrics[node], o.PrintContainers, o.AllNamespaces, o.NoHeaders, o.SortBy)
+		o.Printer.PrintPodMetrics(podMetrics[node], o.PrintContainers, o.AllNamespaces, o.NoHeaders, o.SortBy, o.Sum)
 	}
 
 	return nil
