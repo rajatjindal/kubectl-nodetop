@@ -1,9 +1,0 @@
-apiVersion: policy/v1beta1
-kind: PodDisruptionBudget
-metadata:
-  name: coredns-pdb
-spec:
-  minAvailable: 8
-  selector:
-    matchLabels:
-      app: green

@@ -1,98 +1,92 @@
-# kubectl-evict-pod
+# kubectl-nodetop
 
-This plugin evicts the given pod. useful for testing pod disruption budget rules
+This plugin displays resource (CPU/memory) usage of pods grouped by nodes
 
 ## Usage
 
-### Pod evicted successfully scenario
-
 ```bash
-# before running the evict-pod command
-$ kubectl get pods -n kube-system
-NAME                               READY   STATUS    RESTARTS   AGE
-coredns-fb8b8dccf-6wvj6            1/1     Running   0          10m
-coredns-fb8b8dccf-826fh            1/1     Running   0          9m55s
-etcd-minikube                      1/1     Running   3          27d
-kube-addon-manager-minikube        1/1     Running   13         27d
-kube-apiserver-minikube            1/1     Running   3          27d
-kube-controller-manager-minikube   1/1     Running   0          9h
-kube-proxy-cwwm8                   1/1     Running   3          27d
-kube-scheduler-minikube            1/1     Running   5          27d
-storage-provisioner                1/1     Running   6          27d
 
-# now lets evict the coredns pod
-$ ./kubectl-evict-pod coredns-fb8b8dccf-6wvj6 -n kube-system
-INFO[0000] pod "coredns-fb8b8dccf-6wvj6" in namespace kube-system evicted successfully 
+1. Node (k3s-civo-d0a2a2a2-node-pool-c777-yu5p9)
+==============================================
 
-# observe that the pod has been evicted successfully
-$ kubectl get pods -n kube-system
-NAME                               READY   STATUS    RESTARTS   AGE
-coredns-fb8b8dccf-7ngmk            1/1     Running   0          42s
-coredns-fb8b8dccf-826fh            1/1     Running   0          11m
-etcd-minikube                      1/1     Running   3          27d
-kube-addon-manager-minikube        1/1     Running   13         27d
-kube-apiserver-minikube            1/1     Running   3          27d
-kube-controller-manager-minikube   1/1     Running   0          9h
-kube-proxy-cwwm8                   1/1     Running   3          27d
-kube-scheduler-minikube            1/1     Running   5          27d
-storage-provisioner                1/1     Running   6          27d
+NAME                                     CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%   
+k3s-civo-d0a2a2a2-node-pool-c777-yu5p9   180m         9%     1904Mi          50%       
+
+Pods
+====
+
+NAMESPACE       NAME                                          CPU(cores)   MEMORY(bytes)   
+database        db-0                                          27m          346Mi           
+sample          sampleapi-68585cd94b-8fdtg                    1m           93Mi            
+ingress-nginx   ingress-nginx-controller-59c69f6c7-v28jt      4m           83Mi            
+sample          sampleapi-68585cd94b-f7kgh                    1m           46Mi            
+sample          sampleapi-68585cd94b-5vjsd                    2m           41Mi            
+sample          sampleapi-68585cd94b-687wr                    3m           37Mi            
+kube-system     civo-csi-controller-0                         2m           36Mi            
+cert-manager    cert-manager-cainjector-54f4cc6b5-vqkk6       5m           33Mi            
+cert-manager    cert-manager-848f547974-5rk8c                 2m           22Mi            
+kube-system     metrics-server-7bb44b587b-4jvtf               13m          18Mi            
+kube-system     coredns-7796b77cd4-wllqb                      4m           14Mi            
+kube-system     coredns-7796b77cd4-hvhzf                      4m           14Mi            
+sample          sampleapi-68585cd94b-v2gck                    0m           14Mi            
+kube-system     civo-csi-node-6wxlj                           1m           11Mi            
+cert-manager    cert-manager-webhook-58fb868868-prb2b         5m           10Mi            
+sample          sampleapi-68585cd94b-qh2hh                    1m           7Mi             
+sample          sampleapi-68585cd94b-w65f7                    1m           7Mi             
+kube-system     local-path-provisioner-84bb864455-xpqbz       1m           6Mi             
+ingress-nginx   svclb-ingress-nginx-controller-bxgq4          0m           1Mi             
+                                                              ________     ________        
+                                                              67m          849Mi           
+
+
+2. Node (k3s-civo-d0a2a2a2-node-pool-b26e-rnvk2)
+==============================================
+
+NAME                                     CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+k3s-civo-d0a2a2a2-node-pool-b26e-rnvk2   31m          3%     439Mi           47%
+
+Pods
+====
+
+NAMESPACE       NAME                                   CPU(cores)   MEMORY(bytes)
+kube-system     civo-csi-node-mz5xl                    1m           9Mi
+ingress-nginx   svclb-ingress-nginx-controller-nft5n   0m           1Mi
+                                                       ________     ________
+                                                       1m           10Mi
+
+3. Node (k3s-civo-d0a2a2a2-node-pool-b26e-euiq4)
+==============================================
+
+NAME                                     CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+k3s-civo-d0a2a2a2-node-pool-b26e-euiq4   36m          3%     420Mi           45%
+
+Pods
+====
+
+NAMESPACE       NAME                                   CPU(cores)   MEMORY(bytes)
+kube-system     civo-csi-node-flsgg                    1m           9Mi
+ingress-nginx   svclb-ingress-nginx-controller-69wgv   0m           1Mi
+                                                       ________     ________
+                                                       1m           11Mi
+4. Node (k3s-civo-d0a2a2a2-node-pool-b26e-h417i)
+==============================================
+
+NAME                                     CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+k3s-civo-d0a2a2a2-node-pool-b26e-h417i   34m          3%     398Mi           42%
+
+Pods
+====
+
+NAMESPACE       NAME                                   CPU(cores)   MEMORY(bytes)
+kube-system     civo-csi-node-zqc9d                    1m           9Mi
+ingress-nginx   svclb-ingress-nginx-controller-mkq8m   0m           1Mi
+                                                       ________     ________
+                                                       1m           11Mi
+
 ```
 
-### pod eviction prevented by pod disruption budget
 
-- create the pod disruption budget using following spec
-```yaml
-apiVersion: policy/v1beta1
-kind: PodDisruptionBudget
-metadata:
-  name: coredns-pdb
-spec:
-  minAvailable: 2
-  selector:
-    matchLabels:
-      k8s-app: kube-dns
-```
+## TODO
 
-- apply the pod disruption budget to the cluster
-
-```bash
-# lets apply the pod disruption budget
-$ kubectl apply -f pdb.yaml -n kube-system
-poddisruptionbudget.policy/coredns-pdb created
-```
-
-- Now lets try to evict the pods again
-
-```bash
-# get existing pods
-$ kubectl get pods -n kube-system
-NAME                               READY   STATUS    RESTARTS   AGE
-coredns-fb8b8dccf-7ngmk            1/1     Running   0          4m6s
-coredns-fb8b8dccf-826fh            1/1     Running   0          14m
-etcd-minikube                      1/1     Running   3          27d
-kube-addon-manager-minikube        1/1     Running   13         27d
-kube-apiserver-minikube            1/1     Running   3          27d
-kube-controller-manager-minikube   1/1     Running   0          9h
-kube-proxy-cwwm8                   1/1     Running   3          27d
-kube-scheduler-minikube            1/1     Running   5          27d
-storage-provisioner                1/1     Running   6          27d
-
-# now lets try to evict the pod again
-$ ./kubectl-evict-pod coredns-fb8b8dccf-826fh -n kube-system
-Error: Cannot evict pod as it would violate the pod\'s disruption budget.
-exit status 1
-
-# observe pods continue to run
-$ kubectl get pods -n kube-system
-NAME                               READY   STATUS    RESTARTS   AGE
-coredns-fb8b8dccf-7ngmk            1/1     Running   0          10m
-coredns-fb8b8dccf-826fh            1/1     Running   0          21m
-etcd-minikube                      1/1     Running   3          27d
-kube-addon-manager-minikube        1/1     Running   13         27d
-kube-apiserver-minikube            1/1     Running   3          27d
-kube-controller-manager-minikube   1/1     Running   0          9h
-kube-proxy-cwwm8                   1/1     Running   3          27d
-kube-scheduler-minikube            1/1     Running   5          27d
-storage-provisioner                1/1     Running   6          27d
-```
-# kubectl-group-top
+[] Show summary of pods instead of full details
+[] 
