@@ -17,7 +17,7 @@ package main
 import (
 	"os"
 
-	"github.com/rajatjindal/kubectl-group-top/pkg/cmd"
+	"github.com/rajatjindal/kubectl-nodetop/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 

@@ -5,6 +5,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	metricsapi "k8s.io/metrics/pkg/apis/metrics"
@@ -12,8 +13,8 @@ import (
 	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-func GetNodeMetricsGroupedByNode(metricsClient metricsclientset.Interface, resourceName string, selector labels.Selector) (map[string]metricsapi.NodeMetrics, error) {
-	metrics, err := getNodeMetrics(metricsClient, resourceName, selector)
+func GetNodeMetricsGroupedByNode(metricsClient metricsclientset.Interface, resourceName string, labelsSelector labels.Selector, fieldSelector fields.Selector) (map[string]metricsapi.NodeMetrics, error) {
+	metrics, err := getNodeMetrics(metricsClient, resourceName, labelsSelector, fieldSelector)
 	if err != nil {
 		return nil, err
 	}
@@ -26,7 +27,7 @@ func GetNodeMetricsGroupedByNode(metricsClient metricsclientset.Interface, resou
 	return m, nil
 }
 
-func getNodeMetrics(metricsClient metricsclientset.Interface, resourceName string, selector labels.Selector) (*metricsapi.NodeMetricsList, error) {
+func getNodeMetrics(metricsClient metricsclientset.Interface, resourceName string, labelsSelector labels.Selector, fieldSelector fields.Selector) (*metricsapi.NodeMetricsList, error) {
 	var err error
 	versionedMetrics := &metricsv1beta1api.NodeMetricsList{}
 	mc := metricsClient.MetricsV1beta1()
@@ -38,7 +39,7 @@ func getNodeMetrics(metricsClient metricsclientset.Interface, resourceName strin
 		}
 		versionedMetrics.Items = []metricsv1beta1api.NodeMetrics{*m}
 	} else {
-		versionedMetrics, err = nm.List(context.TODO(), metav1.ListOptions{LabelSelector: selector.String()})
+		versionedMetrics, err = nm.List(context.TODO(), metav1.ListOptions{LabelSelector: labelsSelector.String(), FieldSelector: fieldSelector.String()})
 		if err != nil {
 			return nil, err
 		}

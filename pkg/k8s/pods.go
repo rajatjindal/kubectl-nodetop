@@ -5,8 +5,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/labels"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	metricsapi "k8s.io/metrics/pkg/apis/metrics"
 	metricsv1beta1api "k8s.io/metrics/pkg/apis/metrics/v1beta1"
@@ -27,25 +25,12 @@ func getPodNodeMap(k8sclient corev1client.CoreV1Interface) (map[string]string, e
 	return m, nil
 }
 
-func getPodMetricsFromMetricsAPI(metricsclient metricsclientset.Interface, namespace, resourceName string, allNamespaces bool, labelSelector labels.Selector, fieldSelector fields.Selector) (*metricsapi.PodMetricsList, error) {
-	var err error
-	ns := metav1.NamespaceAll
-	if !allNamespaces {
-		ns = namespace
+func getPodMetricsFromMetricsAPI(metricsclient metricsclientset.Interface) (*metricsapi.PodMetricsList, error) {
+	versionedMetrics, err := metricsclient.MetricsV1beta1().PodMetricses(metav1.NamespaceAll).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, err
 	}
-	versionedMetrics := &metricsv1beta1api.PodMetricsList{}
-	if resourceName != "" {
-		m, err := metricsclient.MetricsV1beta1().PodMetricses(ns).Get(context.TODO(), resourceName, metav1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-		versionedMetrics.Items = []metricsv1beta1api.PodMetrics{*m}
-	} else {
-		versionedMetrics, err = metricsclient.MetricsV1beta1().PodMetricses(ns).List(context.TODO(), metav1.ListOptions{LabelSelector: labelSelector.String(), FieldSelector: fieldSelector.String()})
-		if err != nil {
-			return nil, err
-		}
-	}
+
 	metrics := &metricsapi.PodMetricsList{}
 	err = metricsv1beta1api.Convert_v1beta1_PodMetricsList_To_metrics_PodMetricsList(versionedMetrics, metrics, nil)
 	if err != nil {
@@ -55,8 +40,8 @@ func getPodMetricsFromMetricsAPI(metricsclient metricsclientset.Interface, names
 	return metrics, nil
 }
 
-func GetPodMetricsGroupedByNode(metricsclient metricsclientset.Interface, k8sclient corev1client.CoreV1Interface, namespace, resourceName string, allNamespaces bool, labelSelector labels.Selector, fieldSelector fields.Selector) (map[string][]metricsapi.PodMetrics, error) {
-	metrics, err := getPodMetricsFromMetricsAPI(metricsclient, namespace, resourceName, allNamespaces, labelSelector, fieldSelector)
+func GetPodMetricsGroupedByNode(metricsclient metricsclientset.Interface, k8sclient corev1client.CoreV1Interface) (map[string][]metricsapi.PodMetrics, error) {
+	metrics, err := getPodMetricsFromMetricsAPI(metricsclient)
 	if err != nil {
 		return nil, err
 	}

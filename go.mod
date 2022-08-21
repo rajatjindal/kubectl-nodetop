@@ -1,6 +1,6 @@
-module github.com/rajatjindal/kubectl-group-top
+module github.com/rajatjindal/kubectl-nodetop
 
-go 1.18
+go 1.19
 
 require (
 	github.com/spf13/cobra v1.4.0

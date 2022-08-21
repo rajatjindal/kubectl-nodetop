@@ -30,7 +30,6 @@ import (
 	"k8s.io/kubectl/pkg/metricsutil"
 	"k8s.io/kubectl/pkg/util/completion"
 	"k8s.io/kubectl/pkg/util/i18n"
-	"k8s.io/kubectl/pkg/util/templates"
 	metricsapi "k8s.io/metrics/pkg/apis/metrics"
 	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 
@@ -49,7 +48,7 @@ var supportedMetricsAPIVersions = []string{
 }
 
 type TopPodOptions struct {
-	ResourceName       string
+	NodeName           string
 	Namespace          string
 	LabelSelector      string
 	FieldSelector      string
@@ -73,30 +72,7 @@ type TopPodOptions struct {
 
 var o *TopPodOptions
 
-var (
-	topPodLong = templates.LongDesc(i18n.T(`
-		Display resource (CPU/memory) usage of pods.
-
-		The 'top pod' command allows you to see the resource consumption of pods.
-
-		Due to the metrics pipeline delay, they may be unavailable for a few minutes
-		since pod creation.`))
-
-	topPodExample = templates.Examples(i18n.T(`
-		# Show metrics for all pods in the default namespace
-		kubectl top pod
-
-		# Show metrics for all pods in the given namespace
-		kubectl top pod --namespace=NAMESPACE
-
-		# Show metrics for a given pod and its containers
-		kubectl top pod POD_NAME --containers
-
-		# Show metrics for the pods defined by label name=myLabel
-		kubectl top pod -l name=myLabel`))
-)
-
-func NewCmdTopPod(streams genericclioptions.IOStreams) *cobra.Command {
+func NewCmdNodeTop(streams genericclioptions.IOStreams) *cobra.Command {
 	o = &TopPodOptions{
 		IOStreams:          streams,
 		UseProtocolBuffers: false,
@@ -107,16 +83,13 @@ func NewCmdTopPod(streams genericclioptions.IOStreams) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:                   "pod [NAME | -l label]",
+		Use:                   "[NAME | -l label]",
 		DisableFlagsInUseLine: true,
-		Short:                 i18n.T("Display resource (CPU/memory) usage of pods"),
-		Long:                  topPodLong,
-		Example:               topPodExample,
-		Aliases:               []string{"pods", "po"},
+		Short:                 i18n.T("Display resource (CPU/memory) usage of pods grouped by nodes"),
 	}
 	cmdutil.AddLabelSelectorFlagVar(cmd, &o.LabelSelector)
 	cmd.Flags().StringVar(&o.FieldSelector, "field-selector", o.FieldSelector, "Selector (field query) to filter on, supports '=', '==', and '!='.(e.g. --field-selector key1=value1,key2=value2). The server only supports a limited number of field queries per type.")
-	cmd.Flags().StringVar(&o.SortBy, "sort-by", o.SortBy, "If non-empty, sort pods list using specified field. The field can be either 'cpu' or 'memory'.")
+	cmd.Flags().StringVar(&o.SortBy, "sort-by", o.SortBy, "If non-empty, sort pods list using specified field. The field can be either 'cpu' or 'memory'. defaults to 'memory'")
 	cmd.Flags().BoolVar(&o.PrintContainers, "containers", o.PrintContainers, "If present, print usage of containers within a pod.")
 	cmd.Flags().BoolVarP(&o.AllNamespaces, "all-namespaces", "A", o.AllNamespaces, "If present, list the requested object(s) across all namespaces. Namespace in current context is ignored even if specified with --namespace.")
 	cmd.Flags().BoolVar(&o.NoHeaders, "no-headers", o.NoHeaders, "If present, print output without headers.")
@@ -141,7 +114,7 @@ func NewCmdTopPod(streams genericclioptions.IOStreams) *cobra.Command {
 func (o *TopPodOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args []string) error {
 	var err error
 	if len(args) == 1 {
-		o.ResourceName = args[0]
+		o.NodeName = args[0]
 	} else if len(args) > 1 {
 		return cmdutil.UsageErrorf(cmd, "%s", cmd.Use)
 	}
@@ -179,7 +152,7 @@ func (o *TopPodOptions) Validate() error {
 			return errors.New("--sort-by accepts only cpu or memory")
 		}
 	}
-	if len(o.ResourceName) > 0 && (len(o.LabelSelector) > 0 || len(o.FieldSelector) > 0) {
+	if len(o.NodeName) > 0 && (len(o.LabelSelector) > 0 || len(o.FieldSelector) > 0) {
 		return errors.New("only one of NAME or selector can be provided")
 	}
 	return nil
@@ -213,17 +186,17 @@ func (o TopPodOptions) RunTopPod() error {
 		return errors.New("metrics API not available")
 	}
 
-	podMetrics, err := k8s.GetPodMetricsGroupedByNode(o.MetricsClient, o.k8sclient, o.Namespace, o.ResourceName, o.AllNamespaces, labelSelector, fieldSelector)
+	podMetrics, err := k8s.GetPodMetricsGroupedByNode(o.MetricsClient, o.k8sclient)
 	if err != nil {
 		return err
 	}
 
-	nodeMetrics, err := k8s.GetNodeMetricsGroupedByNode(o.MetricsClient, o.ResourceName, labelSelector)
+	nodeMetrics, err := k8s.GetNodeMetricsGroupedByNode(o.MetricsClient, o.NodeName, labelSelector, fieldSelector)
 	if err != nil {
 		return err
 	}
 
-	availableResources, err := k8s.GetAvailableResources(o.k8sclient, o.ResourceName, labelSelector, o.ShowCapacity)
+	availableResources, err := k8s.GetAvailableResources(o.k8sclient, o.NodeName, labelSelector, o.ShowCapacity)
 	if err != nil {
 		return err
 	}
