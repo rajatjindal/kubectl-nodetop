@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	root := cmd.NewCmdTopPod(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr})
+	root := cmd.NewCmdNodeTop(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr})
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}

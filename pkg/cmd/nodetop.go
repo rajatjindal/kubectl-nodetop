@@ -33,7 +33,7 @@ import (
 	metricsapi "k8s.io/metrics/pkg/apis/metrics"
 	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 
-	"github.com/rajatjindal/kubectl-group-top/pkg/k8s"
+	"github.com/rajatjindal/kubectl-nodetop/pkg/k8s"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
